@@ -31,7 +31,7 @@ class Options:
         self.rental_occupancy_rate = 11/12
         self.income_tax_rate = 47.2/100
 
-        # acquisition cost
+        # Acquisition Cost
         self.notary_cost = None
         self.bank_cost = None
 
@@ -58,7 +58,7 @@ class Options:
         # other amortization
         self.additional_amortization = {}
 
-        # tax subsidy
+        # Tax Subsidy
         self.tax_subsidy = []
 
         self.tax_system = TaxSystem.Real
@@ -104,23 +104,23 @@ class Options:
 def compute_loan_values(df, capital, rate, duration):
     loan_monlthy_payment = (capital * rate/12) / (1 - (1 + rate/12)**-duration)
 
-    df['Loan capital'] = capital
-    df['Loan payment'] = loan_monlthy_payment
-    df['Loan interest'] = 0
+    df['Loan Capital'] = capital
+    df['Loan Payment'] = loan_monlthy_payment
+    df['Loan Interest'] = 0
 
     for i in df.index:
         if i > 0:
-            df.loc[i, 'Loan capital'] = df.loc[i-1, 'Loan capital'] - \
+            df.loc[i, 'Loan Capital'] = df.loc[i-1, 'Loan Capital'] - \
                 df.loc[i-1, 'Loan amortisation']
-        df.loc[i, 'Loan interest'] = rate/12 * df.loc[i, 'Loan capital']
+        df.loc[i, 'Loan Interest'] = rate/12 * df.loc[i, 'Loan Capital']
         df.loc[i, 'Loan amortisation'] = df.loc[i,
-                                                'Loan payment'] - df.loc[i, 'Loan interest']
+                                                'Loan Payment'] - df.loc[i, 'Loan Interest']
 
-        if df.loc[i, 'Loan capital'] <= 0:
-            df.loc[i, 'Loan capital'] = 0
-            df.loc[i, 'Loan interest'] = 0
+        if df.loc[i, 'Loan Capital'] <= 0:
+            df.loc[i, 'Loan Capital'] = 0
+            df.loc[i, 'Loan Interest'] = 0
             df.loc[i, 'Loan amortisation'] = 0
-            df.loc[i, 'Loan payment'] = 0
+            df.loc[i, 'Loan Payment'] = 0
 
     return df
 
@@ -210,9 +210,9 @@ def simulation_base(opt: Options):
     df = compute_loan_values(
         df, opt.loan_amount, opt.loan_rate, opt.loan_duration)
 
-    df['Acquisition cost'] = [opt.acquisition_cost if i ==
+    df['Acquisition Cost'] = [opt.acquisition_cost if i ==
                               0 else 0 for i in range(opt.simulation_duration)]
-    df['Renovation cost'] = [opt.initial_renovation_cost if i ==
+    df['Renovation Cost'] = [opt.initial_renovation_cost if i ==
                              0 else opt.yearly_renovation_cost/12 for i in range(opt.simulation_duration)]
 
     df['Property Tax'] = opt.property_tax / 12
@@ -225,9 +225,9 @@ def simulation_base(opt: Options):
     df['Amortization'] = numpy.sum(
         [opt.additional_amortization[c] for c in opt.additional_amortization])
 
-    df['Tax subsidy'] = 0
+    df['Tax Subsidy'] = 0
     for i, v in enumerate(opt.tax_subsidy):
-        df.loc[i, 'Tax subsidy'] = v
+        df.loc[i, 'Tax Subsidy'] = v
 
     df.index = df['Date']
     df = df.drop('Date', axis=1)
@@ -238,9 +238,13 @@ def simulation_base(opt: Options):
 def compute(opt: Options):
     df = simulation_base(opt)
 
-    df['Cost'] = df['Additional Cost'] + df['Loan interest'] + df['Property Tax'] + \
-        df['Common Maintenance Cost'] + \
-        df['Insurance Cost'] + df['Renovation cost']
+    df['Cost'] = 0
+    df['Cost'] += df['Additional Cost']
+    df['Cost'] += df['Loan Interest']
+    df['Cost'] += df['Property Tax']
+    df['Cost'] += df['Common Maintenance Cost']
+    df['Cost'] += df['Insurance Cost']
+    df['Cost'] += df['Renovation Cost']
 
     if opt.tax_system == TaxSystem.Real:
         df = compute_income_tax(df, opt.income_tax_rate,
@@ -249,10 +253,10 @@ def compute(opt: Options):
         df = compute_income_tax_micro(
             df, opt.income_tax_rate, opt.tax_reduction)
 
-    df['Cash Flow'] = df['Income'] + df['Tax subsidy'] - df['Cost'] - \
-        df['Loan amortisation'] - df['Tax'] - df['Acquisition cost']
+    df['Cash Flow'] = df['Income'] + df['Tax Subsidy'] - df['Cost'] - df['Acquisition Cost'] - \
+        df['Loan amortisation'] - df['Tax']
     df['Treasury'] = df['Cash Flow'].cumsum()
-    df['Resell value'] = df['Property value'] - df['Loan capital']
+    df['Resell value'] = df['Property value'] - df['Loan Capital']
     df['NAV'] = df['Resell value'] + df['Treasury']
 
     df = compute_irr(df, opt.initial_cash_injection)
@@ -261,14 +265,17 @@ def compute(opt: Options):
 
 def summary_one(name, df):
     result = pandas.DataFrame()
-    result['Duree'] = [int(len(df[df['Loan interest'] > 0])/12)]
+    result['Duree'] = [int(len(df[df['Loan Interest'] > 0])/12)]
     result['Cash Flow'] = [int(df['Cash Flow'].sum() /
-                               len(df[df['Loan interest'] > 0]))]
-    result['Mensualite pret'] = [-int(df['Loan payment'].sum() /
-                                      len(df[df['Loan interest'] > 0]))]
-    result['Total Interet'] = [-int(df['Loan interest'].sum())]
+                               len(df[df['Loan Interest'] > 0]))]
+    result['Mensualite pret'] = [-int(df['Loan Payment'].sum() /
+                                      len(df[df['Loan Interest'] > 0]))]
+    result['Total Interet'] = [-int(df['Loan Interest'].sum())]
     result['Total Loyer'] = [int(df['Income'].sum())]
     result['Total IR'] = [-int(df['Tax'].sum())]
+    result['Total Others Fees'] = [- int(df['Cost'].sum())
+                                   - int(df['Acquisition Cost'].sum())
+                                   - result['Total Interet'][0]]
     result['NAV'] = [int(df['NAV'].iloc[-1])]
     result['IRR'] = [(df['IRR'].iloc[-1])]
     result.index = [name]
@@ -280,11 +287,11 @@ def summary(simulations):
 
 
 def effort_epargne_one(df, title):
-    df = df[df['Loan interest'] > 0]
+    df = df[df['Loan Interest'] > 0]
 
-    sub = df['Tax subsidy'].sum()
+    sub = df['Tax Subsidy'].sum()
     ee = df[df['Cash Flow'] < 0]['Cash Flow'].sum()
-    loc = df[df['Loan capital'] > 0]['Income'].sum()
+    loc = df[df['Loan Capital'] > 0]['Income'].sum()
     resell = df['Resell value'].iloc[-1]
 
     x = pandas.DataFrame()
@@ -305,8 +312,8 @@ def effort_epargne(simulations):
 
 
 def plot_cost_one(df, title):
-    df = df[df['Loan interest'] > 0]
-    l = df['Loan interest'].sum()
+    df = df[df['Loan Interest'] > 0]
+    l = df['Loan Interest'].sum()
     pt = df['Property Tax'].sum()
     t = pt + df['Tax'].sum()
     cmc = df['Common Maintenance Cost'].sum()
