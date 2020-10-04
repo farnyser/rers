@@ -130,7 +130,7 @@ def compute_property_value(df, property_value, rate):
                           12 == 0 else 1, axis=1)
     df.loc[0, 'Rate'] = 1
     df['Rate'] = df['Rate'].cumprod()
-    df['Property value'] = property_value * df['Rate']
+    df['Property Value'] = property_value * df['Rate']
     df = df.drop('Rate', axis=1)
     return df
 
@@ -256,20 +256,30 @@ def compute(opt: Options):
     df['Cash Flow'] = df['Income'] + df['Tax Subsidy'] - df['Cost'] - df['Acquisition Cost'] - \
         df['Loan amortisation'] - df['Tax']
     df['Treasury'] = df['Cash Flow'].cumsum()
-    df['Resell value'] = df['Property value'] - df['Loan Capital']
+    df['Resell value'] = df['Property Value'] - df['Loan Capital']
     df['NAV'] = df['Resell value'] + df['Treasury']
 
-    df = compute_irr(df, opt.initial_cash_injection)
+    t0 = df.iloc[0]
+    initial_cash_injection = t0['Acquisition Cost'] + t0['Property Value'] + 0.3 * t0['Renovation Cost'] - t0['Loan Capital']
+    df = compute_irr(df, initial_cash_injection)
+
     return df
 
 
 def summary_one(name, df):
+    loan_duration = len(df[df['Loan Interest'] > 0])
+
+    t0 = df.iloc[0]
+    initial_cash_injection = t0['Acquisition Cost'] + t0['Property Value'] + 0.3 * t0['Renovation Cost'] - t0['Loan Capital']
+    cash_flow = df['Cash Flow'].sum() + initial_cash_injection
+
     result = pandas.DataFrame()
-    result['Duree'] = [int(len(df[df['Loan Interest'] > 0])/12)]
-    result['Cash Flow'] = [int(df['Cash Flow'].sum() /
-                               len(df[df['Loan Interest'] > 0]))]
+    result['Duree'] = [int(loan_duration/12)]
+    result['Cash Flow'] = [int(cash_flow /
+                               loan_duration)]
     result['Mensualite pret'] = [-int(df['Loan Payment'].sum() /
-                                      len(df[df['Loan Interest'] > 0]))]
+                                      loan_duration)]
+    result['Apport ini'] = [int(initial_cash_injection)]
     result['Total Interet'] = [-int(df['Loan Interest'].sum())]
     result['Total Loyer'] = [int(df['Income'].sum())]
     result['Total IR'] = [-int(df['Tax'].sum())]
